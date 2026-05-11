@@ -1,0 +1,30 @@
+{
+  "url": "https://studyllab.com.br/",
+  "title": "studyLab",
+  "inputs": [
+    {
+      "name": null,
+      "type": "email",
+      "placeholder": "Seu e-mail institucional",
+      "ariaLabel": null,
+      "id": "email"
+    },
+    {
+      "name": null,
+      "type": "password",
+      "placeholder": "Sua senha",
+      "ariaLabel": null,
+      "id": "senha"
+    }
+  ],
+  "buttons": [
+    {
+      "text": "",
+      "type": null
+    },
+    {
+      "text": "Entrar",
+      "type": "submit"
+    }
+  ]
+}

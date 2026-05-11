@@ -1,0 +1,18 @@
+{
+  "name": "testes-automatizados-studylab",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test:auth": "playwright test tests/auth/auth.spec.js --project=chromium",
+    "test:auth:headed": "playwright test tests/auth/auth.spec.js --project=chromium --headed"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0"
+  }
+}
