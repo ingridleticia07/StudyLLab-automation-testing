@@ -1,5 +1,5 @@
 const authFixture = {
-  baseURL: 'https://studyllab.com.br/',
+  baseURL: 'https://studyllab.com.br/login',
   adminURL: 'https://admin.studyllab.com.br/',
   admin: {
     email: 'study@alu.ufc.br',

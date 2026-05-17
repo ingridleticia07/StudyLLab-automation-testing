@@ -16,7 +16,16 @@ class LoginPage {
   }
 
   async goto(baseURL) {
-    await this.page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+    try {
+      await this.page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+    } catch (error) {
+      if (!`${error}`.includes('ERR_ABORTED')) {
+        throw error;
+      }
+
+      await this.page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => null);
+      await this.page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+    }
   }
 
   async isLoginScreenVisible() {
@@ -47,6 +56,12 @@ class LoginPage {
       this.loadingIndicator.waitFor({ state: 'hidden', timeout }).catch(() => null),
       this.errorAlert.waitFor({ state: 'visible', timeout }).catch(() => null),
     ]);
+  }
+
+  async waitForAuthSession(timeout = 15000) {
+    await this.page.waitForFunction(() => {
+      return document.cookie.includes('authToken=') || window.sessionStorage.getItem('authToken');
+    }, { timeout }).catch(() => null);
   }
 
   async hasInlineError() {

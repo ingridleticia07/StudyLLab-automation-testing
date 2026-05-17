@@ -5,7 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test:auth": "playwright test tests/auth/auth.spec.js --project=chromium",
-    "test:auth:headed": "playwright test tests/auth/auth.spec.js --project=chromium --headed"
+    "test:auth:headed": "playwright test tests/auth/auth.spec.js --project=chromium --headed",
+    "test:users": "playwright test tests/users/users.spec.js --project=chromium",
+    "test:users:headed": "playwright test tests/users/users.spec.js --project=chromium --headed",
+    "test:subjects": "playwright test tests/subjects/subjects.spec.js --project=chromium",
+    "test:subjects:headed": "playwright test tests/subjects/subjects.spec.js --project=chromium --headed",
+    "test:topics": "playwright test tests/topics/topics.spec.js --project=chromium",
+    "test:topics:headed": "playwright test tests/topics/topics.spec.js --project=chromium --headed"
   },
   "keywords": [],
   "author": "",

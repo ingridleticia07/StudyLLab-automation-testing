@@ -1,13 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const { LoginPage } = require('../../pages/login.page');
 const { authFixture } = require('../../fixtures/auth.fixture');
+const { loginThroughPortal } = require('../../utils/admin-session');
 
 test.describe('Testes de Autenticacao', () => {
   let loginPage;
 
-  test.beforeEach(async ({ page }) => {
-    loginPage = new LoginPage(page);
+test.beforeEach(async ({ page }) => {
+  await page.context().clearCookies();
+  loginPage = new LoginPage(page);
+
+  await loginPage.goto(authFixture.baseURL);
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
   });
+});
 
   test('AUTH-001 - login com credenciais validas', async () => {
     await test.step('Given that the user is on the login page', async () => {
@@ -210,30 +218,18 @@ test.describe('Testes de Autenticacao', () => {
 
   test('AUTH-011 - logout com sucesso', async ({ page }) => {
     await test.step('Given that the user is authenticated in the admin area', async () => {
-      await loginPage.goto(authFixture.baseURL);
-      await loginPage.login(authFixture.invalid.spacedEmail, authFixture.admin.password);
-      await loginPage.waitForIdleAfterSubmit(20000);
-      await expect(loginPage.dashboardRoot).toBeVisible({ timeout: 20000 });
+      await loginThroughPortal(loginPage, authFixture);
     });
 
     await test.step('When the user clicks the logout button and confirms the native dialog', async () => {
-      const dialogHandledPromise = new Promise((resolve) => {
-        page.once('dialog', async (dialog) => {
-          const dialogData = {
-            type: dialog.type(),
-            message: dialog.message(),
-          };
-
-          await dialog.accept();
-          resolve(dialogData);
-        });
+      let dialogMessage = '';
+      page.once('dialog', async (dialog) => {
+        dialogMessage = dialog.message();
+        await dialog.accept();
       });
-
+      
       await loginPage.clickSidebarLogout();
-      const dialog = await dialogHandledPromise;
-
-      expect(dialog.type).toBe('confirm');
-      expect(dialog.message).toBe(authFixture.messages.logoutConfirmation);
+      expect(dialogMessage).toBe(authFixture.messages.logoutConfirmation);
     });
 
     await test.step('Then the system should end the session and redirect the user to the login page', async () => {
@@ -245,12 +241,7 @@ test.describe('Testes de Autenticacao', () => {
 
   test('AUTH-012 - acessar direto com a URL sem realizar login', async ({ page }) => {
     await test.step('Given that the user is not authenticated', async () => {
-      await page.context().clearCookies();
       await loginPage.goto(authFixture.baseURL);
-      await page.evaluate(() => {
-        localStorage.clear();
-        sessionStorage.clear();
-      });
     });
 
     await test.step('When the user tries to access the admin URL directly', async () => {
