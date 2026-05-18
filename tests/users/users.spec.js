@@ -14,7 +14,7 @@ test.describe('Testes de Usuarios', () => {
   let createdStudentUser = buildTestStudentUser();
   let createdStudentUserId = null;
 
-  async function ensureUsersPageReady() {//garantir que a página está pronta para uso
+  async function ensureUsersPageReady() {
     await ensureProtectedPageReady({
       loginPage,
       protectedPage: usersPage,
@@ -22,7 +22,7 @@ test.describe('Testes de Usuarios', () => {
       authFixture,
     });
   }
-//deixar um campo vazio intencionalmente,
+
   async function fillRegisterFormExcept(missingField, overrides = {}) {
     const user = {
       ...buildTestStudentUser(),
@@ -39,7 +39,7 @@ test.describe('Testes de Usuarios', () => {
     if (missingField !== 'email') await usersPage.fillRegisterEmail(user.email);
     if (missingField !== 'password') await usersPage.fillRegisterPassword(user.password);
   }
-//função para validar filtros
+
   async function expectAllColumnValuesToMatch(columnIndex, expectedText) {
     const rowCount = await usersPage.getVisibleRowsCount();
     if (rowCount > 0) {
