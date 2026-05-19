@@ -50,6 +50,51 @@ test.describe('Testes de Usuarios', () => {
     }
   }
 
+  async function registerStudentUser(user) {
+    await usersPage.openRegisterModal();
+    await expect(usersPage.registerModalHeading).toBeVisible();
+    await usersPage.fillRegisterForm(user);
+    await usersPage.submitRegisterModal();
+    await usersPage.waitForRegisterModalClosed();
+  }
+
+  async function assertCreatedUserVisibleInList(user) {
+    await expect(usersPage.registerModalHeading).toBeHidden();
+    await usersPage.page.reload(5000);
+    await usersPage.waitForListReady();
+
+    const userFoundInList = await usersPage.openPageContainingUser(user.matricula);
+    expect(userFoundInList, 'O usuário criado deveria ser encontrado em alguma página da listagem.').toBeTruthy();
+
+    const row = usersPage.getRowByMatricula(user.matricula);
+    await row.waitFor({ state: 'visible', timeout: 5000 });
+    await expect(row).toBeVisible();
+  }
+
+  async function assertCreatedUserCanLogIn(browser, user) {
+    const newContext = await browser.newContext();
+    const newPage = await newContext.newPage();
+    const newLoginPage = new LoginPage(newPage);
+
+    await usersPage.page.waitForTimeout(10000);
+
+    await loginThroughPortal(newLoginPage, authFixture, {
+      email: user.email,
+      password: user.password,
+    });
+
+    await newPage.waitForURL(
+      (url) => !url.toString().includes('/login'),
+      { timeout: 20000 },
+    ).catch(() => null);
+    await newPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => null);
+
+    expect.soft(await newLoginPage.hasInlineError(), 'O usuário criado não deveria receber erro ao tentar fazer login.').toBeFalsy();
+    expect.soft(await newLoginPage.isLoginScreenVisible(), 'O usuário criado não deveria permanecer na tela de login.').toBeFalsy();
+
+    await newContext.close();
+  }
+
   test.beforeEach(async ({ page }) => {
     loginPage = new LoginPage(page);
     usersPage = new UsersPage(page);
@@ -189,49 +234,15 @@ test.describe('Testes de Usuarios', () => {
 test('USER-009 - cadastro com dados validos', async ({ browser }) => {
   await test.step('Given that the admin user opens the register user modal', async () => {
     createdStudentUser = buildTestStudentUser();
-    await usersPage.openRegisterModal();
-    await expect(usersPage.registerModalHeading).toBeVisible();
   });
 
   await test.step('When the admin fills the form with valid student data and submits it', async () => {
-    await usersPage.fillRegisterForm(createdStudentUser);
-    await usersPage.submitRegisterModal();
-    await usersPage.waitForRegisterModalClosed();
+    await registerStudentUser(createdStudentUser);
   });
 
   await test.step('Then the created user should appear in the users list and should be able to log in', async () => {
-    await expect(usersPage.registerModalHeading).toBeHidden();
-    await usersPage.page.reload(5000);
-    await usersPage.waitForListReady();
-
-    const userFoundInList = await usersPage.openPageContainingUser(createdStudentUser.matricula);
-    expect(userFoundInList, 'O usuário criado deveria ser encontrado em alguma página da listagem.').toBeTruthy();
-
-    const row = usersPage.getRowByMatricula(createdStudentUser.matricula);
-    await row.waitFor({ state: 'visible', timeout: 5000 });
-    await expect(row).toBeVisible();
-
-    const newContext = await browser.newContext();
-    const newPage = await newContext.newPage();
-    const newLoginPage = new LoginPage(newPage);
-
-    await usersPage.page.waitForTimeout(10000);
-
-    await loginThroughPortal(newLoginPage, authFixture, {
-      email: createdStudentUser.email,
-      password: createdStudentUser.password,
-    });
-
-    await newPage.waitForURL(
-      (url) => !url.toString().includes('/login'),
-      { timeout: 20000 },
-    ).catch(() => null);
-    await newPage.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => null);
-
-    expect.soft(await newLoginPage.hasInlineError(), 'O usuário criado não deveria receber erro ao tentar fazer login.').toBeFalsy();
-    expect.soft(await newLoginPage.isLoginScreenVisible(), 'O usuário criado não deveria permanecer na tela de login.').toBeFalsy();
-
-    await newContext.close();
+    await assertCreatedUserVisibleInList(createdStudentUser);
+    await assertCreatedUserCanLogIn(browser, createdStudentUser);
   });
 });
 
