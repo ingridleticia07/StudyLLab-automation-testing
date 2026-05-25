@@ -77,13 +77,49 @@ class SubjectsPage extends PaginatedPage {
   }
 
   async selectCourseFilter(optionName) {
+    const currentLabel = await this.getCourseFilterLabel();
+    if (this.normalizeText(currentLabel).includes(this.normalizeText(optionName))) {
+      return;
+    }
+
     await this.openCourseFilter();
-    await this.page.getByRole('menuitem', { name: optionName, exact: true }).click();
+    const responsePromise = this.page.waitForResponse((response) =>
+      this.isSubjectsListResponse(response) &&
+      response.url().includes(`idCurso=${this.getCourseQueryValue(optionName)}`),
+    );
+    await this.page.getByRole('menuitem', { name: optionName, exact: false }).click();
+    await responsePromise.catch(() => null);
     await this.waitForTableData();
   }
 
   async getCourseFilterLabel() {
     return (await this.courseFilterButton.innerText()).trim();
+  }
+
+  normalizeText(value) {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  getCourseQueryValue(optionName) {
+    const courseMap = {
+      'Todos os curso': 0,
+      'Engenharia de Software': 1,
+      'Ciência da Computação': 2,
+      'Engenharia Civil': 3,
+      'Engenharia de Produção': 4,
+      'Engenharia Mecânica': 5,
+      'Engenharia de software': 1,
+      'Ciência da computação': 2,
+      'Engenharia civil': 3,
+      'Engenharia de produção': 4,
+      'Engenharia mecânica': 5,
+    };
+
+    return courseMap[optionName] ?? 0;
   }
 
   isSubjectsListResponse(response, pageNumber) {

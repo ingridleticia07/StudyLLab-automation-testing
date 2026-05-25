@@ -29,7 +29,7 @@ const test = base.test.extend({
 
     const sessionEntries = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
     await use({ storagePath, sessionEntries });
-  }, { scope: 'worker' }],
+  }, { scope: 'worker', timeout: 60000 }],
 
   context: async ({ browser, adminAuthState }, use) => {
     const context = await browser.newContext({ storageState: adminAuthState.storagePath });
@@ -41,13 +41,21 @@ const test = base.test.extend({
       }
     }, { entries: adminAuthState.sessionEntries });
     await use(context);
-    await context.close();
+    await context.close().catch((error) => {
+      if (!`${error}`.includes('ENOENT')) {
+        throw error;
+      }
+    });
   },
 
   page: async ({ context }, use) => {
     const page = await context.newPage();
     await use(page);
-    await page.close();
+    await page.close().catch((error) => {
+      if (!`${error}`.includes('ENOENT')) {
+        throw error;
+      }
+    });
   },
 });
 

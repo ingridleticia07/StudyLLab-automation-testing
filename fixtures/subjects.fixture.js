@@ -9,11 +9,11 @@ const subjectsFixture = {
   },
   filters: {
     all: 'Todos os curso',
-    software: 'Engenharia de Software',
-    computing: 'Ciência da Computação',
-    civil: 'Engenharia Civil',
-    production: 'Engenharia de Produção',
-    mechanics: 'Engenharia Mecânica',
+    software: 'Engenharia de software',
+    computing: 'Ciência da computação',
+    civil: 'Engenharia civil',
+    production: 'Engenharia de produção',
+    mechanics: 'Engenharia mecânica',
   },
   register: {
     defaultCourse: 'ES',
@@ -49,12 +49,17 @@ const subjectsFixture = {
   },
 };
 
+function buildAutoSubjectSuffix() {
+  const numericPortion = `${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(-5);
+  return `5${numericPortion}`;
+}
+
 function buildTestSubject(overrides = {}) {
-  const suffix = `${Date.now()}${Math.floor(Math.random() * 100)}`.slice(-4);
+  const suffix = buildAutoSubjectSuffix();
 
   return {
     code: overrides.code ?? `RUS${suffix}`,
-    name: overrides.name ?? `Teste Automacao ${suffix}`,
+    name: overrides.name ?? `[AUTO] Disciplina Base ${suffix}`,
     professor: overrides.professor ?? `Professor Automação`,
     studentsCount: overrides.studentsCount ?? '50',
     course: overrides.course ?? subjectsFixture.register.defaultCourse,
@@ -64,4 +69,4 @@ function buildTestSubject(overrides = {}) {
   };
 }
 
-module.exports = { subjectsFixture, buildTestSubject };
+module.exports = { subjectsFixture, buildTestSubject, buildAutoSubjectSuffix };

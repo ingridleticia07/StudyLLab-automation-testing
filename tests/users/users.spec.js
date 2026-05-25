@@ -6,13 +6,11 @@ const { usersFixture, buildTestStudentUser } = require('../../fixtures/users.fix
 const { loginThroughPortal, ensureProtectedPageReady, getCookieValue } = require('../../utils/admin-session');
 
 test.describe('Testes de Usuarios', () => {
-  test.describe.configure({ mode: 'serial' });
   test.setTimeout(60000);
 
   let loginPage;
   let usersPage;
-  let createdStudentUser = buildTestStudentUser();
-  let createdStudentUserId = null;
+  let createdStudentUser = null;
 
   async function ensureUsersPageReady() {
     await ensureProtectedPageReady({
@@ -95,6 +93,29 @@ test.describe('Testes de Usuarios', () => {
     await newContext.close();
   }
 
+  async function cleanupCreatedStudentUser() {
+    if (!createdStudentUser?.matricula) {
+      return;
+    }
+
+    await ensureUsersPageReady();
+    await usersPage.selectStatusOption(usersFixture.filters.status.all);
+    await usersPage.selectTypeOption(usersFixture.filters.type.all);
+
+    const userFoundInList = await usersPage.openPageContainingUser(createdStudentUser.matricula);
+    if (!userFoundInList) {
+      createdStudentUser = null;
+      return;
+    }
+
+    await usersPage.openDeletePopupByMatricula(createdStudentUser.matricula);
+    await expect(usersPage.deleteModalHeading).toBeVisible();
+    await usersPage.confirmDeletePopup();
+    await usersPage.waitForDeletePopupClosed();
+    await usersPage.waitForTableData();
+    createdStudentUser = null;
+  }
+
   test.beforeEach(async ({ page }) => {
     loginPage = new LoginPage(page);
     usersPage = new UsersPage(page);
@@ -102,6 +123,10 @@ test.describe('Testes de Usuarios', () => {
     await ensureUsersPageReady();
     await usersPage.selectStatusOption(usersFixture.filters.status.all);
     await usersPage.selectTypeOption(usersFixture.filters.type.all);
+  });
+
+  test.afterEach(async () => {
+    await cleanupCreatedStudentUser();
   });
 
   test('USER-001 - acessar tela de usuarios', async () => {
@@ -248,7 +273,9 @@ test('USER-009 - cadastro com dados validos', async ({ browser }) => {
 
 test('USER-010 - exclusao de usuario', async ({ browser }) => {
     await test.step('Given that a test user was created and the admin is authenticated on the users flow', async () => {
-      expect(createdStudentUser.matricula, 'O cenario de exclusao depende do usuario criado anteriormente.').toBeTruthy();
+      createdStudentUser = buildTestStudentUser();
+      await registerStudentUser(createdStudentUser);
+      await assertCreatedUserVisibleInList(createdStudentUser);
       await ensureUsersPageReady();
     });
 
@@ -290,6 +317,7 @@ test('USER-010 - exclusao de usuario', async ({ browser }) => {
       ).toBeNull();
 
       await newContext.close();
+      createdStudentUser = null;
     });
 });
 

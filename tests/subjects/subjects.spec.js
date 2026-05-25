@@ -3,17 +3,17 @@ const { LoginPage } = require('../../pages/login.page');
 const { SubjectsPage } = require('../../pages/subjects.page');
 const { TopicsPage } = require('../../pages/topics.page');
 const { authFixture } = require('../../fixtures/auth.fixture');
-const { subjectsFixture, buildTestSubject } = require('../../fixtures/subjects.fixture');
+const { subjectsFixture, buildTestSubject, buildAutoSubjectSuffix } = require('../../fixtures/subjects.fixture');
 const { topicsFixture, buildTestTopic } = require('../../fixtures/topics.fixture');
 const { loginThroughPortal, ensureProtectedPageReady } = require('../../utils/admin-session');
 
 test.describe('Testes de Disciplinas', () => {
-  test.describe.configure({ mode: 'serial' });
   test.setTimeout(90000);
 
   let loginPage;
   let subjectsPage;
   let topicsPage;
+  let cachedAdminAuthToken = null;
   let createdSubject = null;
   let duplicateBaseSubject = null;
   let duplicateSubject = null;
@@ -41,11 +41,20 @@ test.describe('Testes de Disciplinas', () => {
     return new Date().toISOString().slice(0, 10);
   }
 
+  function normalizeText(value = '') {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
   async function getAdminAuthHeaders(pageContext = subjectsPage.page) {
-    const token = await pageContext.evaluate(() => window.sessionStorage.getItem('authToken'));
+    const token = await pageContext.evaluate(() => window.sessionStorage.getItem('authToken')).catch(() => cachedAdminAuthToken);
+    cachedAdminAuthToken = token ?? cachedAdminAuthToken;
 
     return {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${cachedAdminAuthToken}`,
       'x-api-key': topicsFixture.apiKey,
     };
   }
@@ -124,6 +133,13 @@ test.describe('Testes de Disciplinas', () => {
     );
 
     expect(response.ok(), 'A exclusao do topico dependente pela API deveria retornar sucesso.').toBeTruthy();
+  }
+
+  async function apiDeleteSubjectById(subjectId, pageContext = subjectsPage.page) {
+    return pageContext.request.delete(
+      `${topicsFixture.apiBaseURL}/disciplina/excluirDisciplina?disciplinaIdentifier=${subjectId}`,
+      { headers: await getAdminAuthHeaders(pageContext) },
+    );
   }
 
   async function fillRegisterFormExcept(missingField, overrides = {}) {
@@ -232,7 +248,7 @@ test.describe('Testes de Disciplinas', () => {
 
     duplicateBaseSubject = buildTestSubject({
       code: buildUniqueSubjectCode('DUP'),
-      name: `Disciplina Base Duplicidade ${Date.now().toString().slice(-6)}`,
+      name: `[AUTO] Disciplina Duplicidade ${buildAutoSubjectSuffix()}`,
       professor: subjectsFixture.register.defaultProfessor,
       course: subjectsFixture.courses.software.value,
       courseLabel: subjectsFixture.courses.software.label,
@@ -249,7 +265,7 @@ test.describe('Testes de Disciplinas', () => {
 
     createdSubject = buildTestSubject({
       code: buildUniqueSubjectCode('EDT'),
-      name: `Disciplina Editavel ${Date.now().toString().slice(-6)}`,
+      name: `[AUTO] Disciplina Edição ${buildAutoSubjectSuffix()}`,
       professor: subjectsFixture.register.defaultProfessor,
       course: subjectsFixture.courses.production.value,
       courseLabel: subjectsFixture.courses.production.label,
@@ -283,46 +299,35 @@ test.describe('Testes de Disciplinas', () => {
     if (dependentTopicModel) {
       await apiDeleteTopicById(dependentTopicModel.idTopico);
     }
-
-    await ensureSubjectsPageReady();
-    await subjectsPage.openDeletePopupByCode(subject.code);
-    await expect(subjectsPage.deleteModalHeading).toBeVisible();
-    await subjectsPage.confirmDeletePopup();
-    await subjectsPage.waitForDeletePopupClosed();
+    const createdSubjectModel = await apiFindSubjectByCode(subject);
+    if (createdSubjectModel) {
+      await apiDeleteSubjectById(createdSubjectModel.idDisciplina);
+    }
     subjectsToCleanup.delete(subject.code);
   }
 
-  async function cleanupSubjects(browser) {
+  async function cleanupSubjects(pageContext = subjectsPage.page) {
     if (subjectsToCleanup.size === 0) {
+      createdSubject = null;
+      duplicateBaseSubject = null;
+      duplicateSubject = null;
       return;
     }
 
-    const cleanupPage = await browser.newPage();
-    const cleanupLoginPage = new LoginPage(cleanupPage);
-    const cleanupSubjectsPage = new SubjectsPage(cleanupPage);
-
-    await loginThroughPortal(cleanupLoginPage, authFixture);
-
-    await cleanupSubjectsPage.goto(subjectsFixture.adminSubjectsURL);
-    await cleanupSubjectsPage.waitForListReady();
-
     for (const code of [...subjectsToCleanup]) {
-      await cleanupSubjectsPage.goToLastPage();
-      const row = cleanupSubjectsPage.getRowByCode(code);
-      const visible = await row.isVisible().catch(() => false);
-
-      if (!visible) {
+      const subjectModel = await apiFindSubjectByCode({ code }, pageContext).catch(() => null);
+      if (!subjectModel?.idDisciplina) {
+        subjectsToCleanup.delete(code);
         continue;
       }
 
-      await cleanupSubjectsPage.openDeletePopupByCode(code);
-      await expect(cleanupSubjectsPage.deleteModalHeading).toBeVisible();
-      await cleanupSubjectsPage.confirmDeletePopup();
-      await cleanupSubjectsPage.waitForDeletePopupClosed();
-      await cleanupSubjectsPage.waitForTableData();
+      await apiDeleteSubjectById(subjectModel.idDisciplina, pageContext);
+      subjectsToCleanup.delete(code);
     }
 
-    await cleanupPage.close();
+    createdSubject = null;
+    duplicateBaseSubject = null;
+    duplicateSubject = null;
   }
 
   test.beforeEach(async ({ page }) => {
@@ -331,10 +336,11 @@ test.describe('Testes de Disciplinas', () => {
     topicsPage = new TopicsPage(page);
 
     await ensureSubjectsPageReady();
+    await subjectsPage.selectCourseFilter(subjectsFixture.filters.all);
   });
 
-  test.afterAll(async ({ browser }) => {
-    await cleanupSubjects(browser);
+  test.afterEach(async ({ page }) => {
+    await cleanupSubjects(page);
   });
 
   test('DISC-001 - acessar tela de disciplinas', async () => {
@@ -557,7 +563,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-013 - cadastro com quantidade de alunos negativa', async () => {
-    test.skip(true, 'O ambiente publicado aceita quantidade negativa no cadastro de disciplinas.');
     let negativeSubject;
 
     await test.step('Given that the register subject modal is open', async () => {
@@ -584,7 +589,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-014 - cadastro com quantidade de alunos igual a zero', async () => {
-    test.skip(true, 'O ambiente publicado aceita quantidade zero no cadastro de disciplinas.');
     let zeroSubject;
 
     await test.step('Given that the register subject modal is open', async () => {
@@ -611,7 +615,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-015 - cadastro com quantidade de alunos decimal', async () => {
-    test.skip(true, 'O ambiente publicado aceita quantidade decimal no cadastro de disciplinas.');
     let decimalSubject;
 
     await test.step('Given that the register subject modal is open', async () => {
@@ -638,7 +641,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-016 - cadastro com codigo em formato invalido', async () => {
-    test.skip(true, 'O ambiente publicado aceita codigo fora do formato esperado.');
     let invalidCodeSubject;
 
     await test.step('Given that the register subject modal is open', async () => {
@@ -665,7 +667,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-017 - cadastro com nome contendo apenas espacos', async () => {
-    test.skip(true, 'O ambiente publicado nao bloqueia corretamente nomes compostos apenas por espacos.');
 
     await test.step('Given that the register subject modal is open', async () => {
       await subjectsPage.openRegisterModal();
@@ -689,7 +690,6 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-018 - cadastro com professor contendo apenas espacos', async () => {
-    test.skip(true, 'O ambiente publicado nao bloqueia corretamente professores compostos apenas por espacos.');
 
     await test.step('Given that the register subject modal is open', async () => {
       await subjectsPage.openRegisterModal();
@@ -713,16 +713,23 @@ test.describe('Testes de Disciplinas', () => {
   });
 
   test('DISC-019 - atualizacao da listagem apos cadastro', async () => {
-    await test.step('Given that a test subject was created successfully in a previous scenario', async () => {
-      expect(createdSubject).not.toBeNull();
+    let listedSubject;
+
+    await test.step('Given that a test subject is registered for the listing update scenario', async () => {
+      listedSubject = buildTestSubject({
+        code: buildUniqueSubjectCode('LST'),
+        name: `[AUTO] Disciplina Listagem ${buildAutoSubjectSuffix()}`,
+      });
+      await registerSubject(listedSubject);
     });
 
-    await test.step('When the admin opens the last page of the subjects listing', async () => {
-      await subjectsPage.goToLastPage();
+    await test.step('When the refreshed subjects listing is displayed', async () => {
+      await expect(subjectsPage.registerModalHeading).toBeHidden();
+      await subjectsPage.waitForTableData();
     });
 
     await test.step('Then the created subject should be listed with the expected data', async () => {
-      await assertSubjectVisibleOnList(createdSubject);
+      await assertSubjectVisibleOnList(listedSubject);
     });
   });
 
@@ -736,11 +743,11 @@ test.describe('Testes de Disciplinas', () => {
     });
 
     await test.step('Then the listing should keep the selected filter label and display only matching courses on screen', async () => {
-      expect(await subjectsPage.getCourseFilterLabel()).toContain(subjectsFixture.filters.software);
+      expect(normalizeText(await subjectsPage.getCourseFilterLabel())).toContain(normalizeText(subjectsFixture.filters.software));
       const courseTexts = await subjectsPage.getColumnTexts(3);
       if (courseTexts.length > 0) {
         for (const courseText of courseTexts) {
-          expect.soft(courseText).toContain(subjectsFixture.filters.software);
+          expect.soft(normalizeText(courseText)).toContain(normalizeText(subjectsFixture.filters.software));
         }
       }
     });
@@ -756,11 +763,11 @@ test.describe('Testes de Disciplinas', () => {
     });
 
     await test.step('Then the listing should keep the selected filter label and display only matching courses on screen', async () => {
-      expect(await subjectsPage.getCourseFilterLabel()).toContain(subjectsFixture.filters.computing);
+      expect(normalizeText(await subjectsPage.getCourseFilterLabel())).toContain(normalizeText(subjectsFixture.filters.computing));
       const courseTexts = await subjectsPage.getColumnTexts(3);
       if (courseTexts.length > 0) {
         for (const courseText of courseTexts) {
-          expect.soft(courseText).toContain(subjectsFixture.filters.computing);
+          expect.soft(normalizeText(courseText)).toContain(normalizeText(subjectsFixture.filters.computing));
         }
       }
     });
@@ -776,11 +783,11 @@ test.describe('Testes de Disciplinas', () => {
     });
 
     await test.step('Then the listing should keep the selected filter label and display only matching courses on screen', async () => {
-      expect(await subjectsPage.getCourseFilterLabel()).toContain(subjectsFixture.filters.civil);
+      expect(normalizeText(await subjectsPage.getCourseFilterLabel())).toContain(normalizeText(subjectsFixture.filters.civil));
       const courseTexts = await subjectsPage.getColumnTexts(3);
       if (courseTexts.length > 0) {
         for (const courseText of courseTexts) {
-          expect.soft(courseText).toContain(subjectsFixture.filters.civil);
+          expect.soft(normalizeText(courseText)).toContain(normalizeText(subjectsFixture.filters.civil));
         }
       }
     });
@@ -796,11 +803,11 @@ test.describe('Testes de Disciplinas', () => {
     });
 
     await test.step('Then the listing should keep the selected filter label and display only matching courses on screen', async () => {
-      expect(await subjectsPage.getCourseFilterLabel()).toContain(subjectsFixture.filters.production);
+      expect(normalizeText(await subjectsPage.getCourseFilterLabel())).toContain(normalizeText(subjectsFixture.filters.production));
       const courseTexts = await subjectsPage.getColumnTexts(3);
       if (courseTexts.length > 0) {
         for (const courseText of courseTexts) {
-          expect.soft(courseText).toContain(subjectsFixture.filters.production);
+          expect.soft(normalizeText(courseText)).toContain(normalizeText(subjectsFixture.filters.production));
         }
       }
     });
@@ -816,11 +823,11 @@ test.describe('Testes de Disciplinas', () => {
     });
 
     await test.step('Then the listing should keep the selected filter label and display only matching courses on screen', async () => {
-      expect(await subjectsPage.getCourseFilterLabel()).toContain(subjectsFixture.filters.mechanics);
+      expect(normalizeText(await subjectsPage.getCourseFilterLabel())).toContain(normalizeText(subjectsFixture.filters.mechanics));
       const courseTexts = await subjectsPage.getColumnTexts(3);
       if (courseTexts.length > 0) {
         for (const courseText of courseTexts) {
-          expect.soft(courseText).toContain(subjectsFixture.filters.mechanics);
+          expect.soft(normalizeText(courseText)).toContain(normalizeText(subjectsFixture.filters.mechanics));
         }
       }
     });
@@ -943,6 +950,7 @@ test.describe('Testes de Disciplinas', () => {
   test('DISC-030 - excluir disciplina existente', async () => {
     await test.step('Given that there is a disposable subject available for deletion', async () => {
       duplicateSubject = buildTestSubject({
+        name: `[AUTO] Disciplina Exclusão ${buildAutoSubjectSuffix()}`,
         course: subjectsFixture.courses.civil.value,
         courseLabel: subjectsFixture.courses.civil.label,
       });
@@ -987,7 +995,7 @@ test.describe('Testes de Disciplinas', () => {
 
   test('DISC-032 - excluir disciplina vinculada a registros dependentes', async () => {
     const dependentSubject = buildTestSubject({
-      name: `Disciplina Dependente ${Date.now().toString().slice(-6)}`,
+      name: `[AUTO] Disciplina Dependência ${buildAutoSubjectSuffix()}`,
       course: subjectsFixture.courses.production.value,
       courseLabel: subjectsFixture.courses.production.label,
     });

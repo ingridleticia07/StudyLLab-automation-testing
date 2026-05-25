@@ -3,18 +3,18 @@ const { LoginPage } = require('../../pages/login.page');
 const { SubjectsPage } = require('../../pages/subjects.page');
 const { TopicsPage } = require('../../pages/topics.page');
 const { authFixture } = require('../../fixtures/auth.fixture');
-const { subjectsFixture, buildTestSubject } = require('../../fixtures/subjects.fixture');
+const { subjectsFixture, buildTestSubject, buildAutoSubjectSuffix } = require('../../fixtures/subjects.fixture');
 const { topicsFixture, buildTestTopic, buildTestForumResponse } = require('../../fixtures/topics.fixture');
 const { loginThroughPortal, ensureProtectedPageReady, getCookieValue } = require('../../utils/admin-session');
 
 test.describe('Testes de Topicos', () => {
-  test.describe.configure({ mode: 'serial' });
   test.setTimeout(90000);
 
   let loginPage;
   let subjectsPage;
   let topicsPage;
   let adminUserId = null;
+  let cachedAdminAuthToken = null;
 
   let primarySubject = null;
   let alternateSubject = null;
@@ -83,14 +83,14 @@ test.describe('Testes de Topicos', () => {
   }
 
   async function getAdminAuthHeaders(pageContext = topicsPage.page) {
-    const token = await pageContext.evaluate(() => window.sessionStorage.getItem('authToken'));
+    const token = await pageContext.evaluate(() => window.sessionStorage.getItem('authToken')).catch(() => cachedAdminAuthToken);
+    cachedAdminAuthToken = token ?? cachedAdminAuthToken;
 
     return {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${cachedAdminAuthToken}`,
       'x-api-key': topicsFixture.apiKey,
     };
   }
-
   async function getAdminUserIdFromToken(pageContext = topicsPage.page) {
     const token = await pageContext.evaluate(() => window.sessionStorage.getItem('authToken'));
     const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf-8'));
@@ -273,12 +273,10 @@ test.describe('Testes de Topicos', () => {
       return;
     }
 
-    const suffix = `${Date.now()}`.slice(-5);
-
     primarySubject = buildTestSubject({
       code: buildUniqueSubjectCode('TPA'),
-      name: `Topic Subject A ${suffix}`,
-      professor: `Professor Topic A ${suffix}`,
+      name: `[AUTO] Disciplina TÃ³pico ${buildAutoSubjectSuffix()}`,
+      professor: `Professor Topic A ${buildAutoSubjectSuffix()}`,
       studentsCount: '50',
       course: subjectsFixture.courses.software.value,
       courseLabel: subjectsFixture.courses.software.label,
@@ -286,8 +284,8 @@ test.describe('Testes de Topicos', () => {
 
     alternateSubject = buildTestSubject({
       code: buildUniqueSubjectCode('TPB'),
-      name: `Topic Subject B ${suffix}`,
-      professor: `Professor Topic B ${suffix}`,
+      name: `[AUTO] Disciplina TÃ³pico ${buildAutoSubjectSuffix()}`,
+      professor: `Professor Topic B ${buildAutoSubjectSuffix()}`,
       studentsCount: '45',
       course: subjectsFixture.courses.civil.value,
       courseLabel: subjectsFixture.courses.civil.label,
@@ -295,8 +293,8 @@ test.describe('Testes de Topicos', () => {
 
     emptySubject = buildTestSubject({
       code: buildUniqueSubjectCode('TPC'),
-      name: `Topic Subject Empty ${suffix}`,
-      professor: `Professor Topic Empty ${suffix}`,
+      name: `[AUTO] Disciplina Filtro ${buildAutoSubjectSuffix()}`,
+      professor: `Professor Topic Empty ${buildAutoSubjectSuffix()}`,
       studentsCount: '50',
       course: subjectsFixture.courses.software.value,
       courseLabel: subjectsFixture.courses.software.label,
@@ -312,13 +310,10 @@ test.describe('Testes de Topicos', () => {
     if (primarySubject) {
       return;
     }
-
-    const suffix = `${Date.now()}`.slice(-5);
-
     primarySubject = buildTestSubject({
       code: buildUniqueSubjectCode('TPA'),
-      name: `Topic Subject ${suffix}`,
-      professor: `Professor Topic A ${suffix}`,
+      name: `[AUTO] Disciplina Tópico ${buildAutoSubjectSuffix()}`,
+      professor: `Professor Topic A ${buildAutoSubjectSuffix()}`,
       studentsCount: '50',
       course: subjectsFixture.courses.software.value,
       courseLabel: subjectsFixture.courses.software.label,
@@ -428,19 +423,20 @@ test.describe('Testes de Topicos', () => {
     await topicsPage.waitForDeletePopupClosed();
   }
 
-  async function cleanupCreatedData(browser) {
+  async function cleanupCreatedData(pageContext = topicsPage.page) {
     if (subjectCodesToCleanup.size === 0 && topicsToCleanup.size === 0 && responsesToCleanup.size === 0) {
+      primarySubject = null;
+      alternateSubject = null;
+      emptySubject = null;
+      createdTopic = null;
+      alternateTopic = null;
+      siblingTopic = null;
       return;
     }
 
-    const cleanupPage = await browser.newPage();
-    const cleanupLoginPage = new LoginPage(cleanupPage);
+    adminUserId = Number(await getCookieValue(pageContext, 'id-user')) || adminUserId;
 
-    await loginThroughPortal(cleanupLoginPage, authFixture);
-
-    adminUserId = Number(await getCookieValue(cleanupPage, 'id-user'));
-
-    const topicsList = await apiGetAllTopics(cleanupPage);
+    const topicsList = await apiGetAllTopics(pageContext);
 
     for (const responseData of responsesToCleanup.values()) {
       const relatedTopic = topicsList.find((topic) =>
@@ -451,39 +447,50 @@ test.describe('Testes de Topicos', () => {
         continue;
       }
 
-      const responses = await apiListResponsesByTopic(relatedTopic.idTopico, cleanupPage);
+      const responses = await apiListResponsesByTopic(relatedTopic.idTopico, pageContext);
       const relatedResponse = responses.find((response) => response.resposta === responseData.text);
 
       if (!relatedResponse) {
+        responsesToCleanup.delete(responseKey(responseData.text, responseData.topicName, responseData.subjectName));
         continue;
       }
 
-      await apiDeleteResponseById(relatedResponse.idResposta, cleanupPage);
+      await apiDeleteResponseById(relatedResponse.idResposta, pageContext);
+      responsesToCleanup.delete(responseKey(responseData.text, responseData.topicName, responseData.subjectName));
     }
 
-    const refreshedTopics = await apiGetAllTopics(cleanupPage);
+    const refreshedTopics = await apiGetAllTopics(pageContext);
     for (const topicData of topicsToCleanup.values()) {
       const relatedTopic = refreshedTopics.find((topic) =>
         topic.nomeTopico === topicData.name &&
         (!topic.disciplina || topic.disciplina?.nomeDisciplina === topicData.subjectName));
 
       if (!relatedTopic) {
+        topicsToCleanup.delete(topicKey(topicData.name, topicData.subjectName));
         continue;
       }
 
-      await apiDeleteTopicById(relatedTopic.idTopico, cleanupPage);
+      await apiDeleteTopicById(relatedTopic.idTopico, pageContext);
+      topicsToCleanup.delete(topicKey(topicData.name, topicData.subjectName));
     }
 
-    for (const code of subjectCodesToCleanup) {
-      const subject = await apiFindSubjectByCode({ code }, cleanupPage);
+    for (const code of [...subjectCodesToCleanup]) {
+      const subject = await apiFindSubjectByCode({ code }, pageContext);
       if (!subject) {
+        subjectCodesToCleanup.delete(code);
         continue;
       }
 
-      await apiDeleteSubjectById(subject.idDisciplina, cleanupPage);
+      await apiDeleteSubjectById(subject.idDisciplina, pageContext);
+      subjectCodesToCleanup.delete(code);
     }
 
-    await cleanupPage.close();
+    primarySubject = null;
+    alternateSubject = null;
+    emptySubject = null;
+    createdTopic = null;
+    alternateTopic = null;
+    siblingTopic = null;
   }
 
   test.beforeEach(async ({ page }) => {
@@ -495,8 +502,8 @@ test.describe('Testes de Topicos', () => {
     await ensureAdminUserCookie();
   });
 
-  test.afterAll(async ({ browser }) => {
-    await cleanupCreatedData(browser);
+  test.afterEach(async ({ page }) => {
+    await cleanupCreatedData(page);
   });
 
   test('TOP-001 - acessar tela de topicos', async () => {
@@ -628,7 +635,6 @@ test.describe('Testes de Topicos', () => {
   });
 
   test('TOP-008 - cadastro com nome do topico contendo apenas espacos', async () => {
-    test.skip(true, 'O ambiente publicado nao exibe a validacao esperada quando o nome do topico contem apenas espacos.');
 
     await test.step('Given that the register topic modal is open', async () => {
       await ensureTestSubjectsCreated();
@@ -801,11 +807,10 @@ test.describe('Testes de Topicos', () => {
     let emptyFilterSubject;
 
     await test.step('Given that there is a support subject without registered topics', async () => {
-      const suffix = `${Date.now()}`.slice(-5);
       emptyFilterSubject = buildTestSubject({
         code: buildUniqueSubjectCode('TPE'),
-        name: `Topic Subject Empty ${suffix}`,
-        professor: `Professor Topic Empty ${suffix}`,
+        name: `[AUTO] Disciplina Filtro ${buildAutoSubjectSuffix()}`,
+        professor: `Professor Topic Empty ${buildAutoSubjectSuffix()}`,
         studentsCount: '50',
         course: subjectsFixture.courses.software.value,
         courseLabel: subjectsFixture.courses.software.label,
@@ -1010,13 +1015,11 @@ test.describe('Testes de Topicos', () => {
   test('TOP-022 - excluir topico vinculado a conteudos ou respostas', async () => {
     let dependentTopic;
     const linkedResponse = buildTestForumResponse();
-
     await test.step('Given that a topic exists with a linked forum response', async () => {
-      const suffix = `${Date.now()}`.slice(-5);
       const dependentSubject = buildTestSubject({
         code: buildUniqueSubjectCode('TPL'),
-        name: `TÃ³pico Subject Linked ${suffix}`,
-        professor: `Professor Topic Linked ${suffix}`,
+        name: `[AUTO] Disciplina Dependência ${buildAutoSubjectSuffix()}`,
+        professor: `Professor Topic Linked ${buildAutoSubjectSuffix()}`,
         studentsCount: '50',
         course: subjectsFixture.courses.software.value,
         courseLabel: subjectsFixture.courses.software.label,
@@ -1039,3 +1042,4 @@ test.describe('Testes de Topicos', () => {
     });
   });
 });
+

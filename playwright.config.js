@@ -18,19 +18,28 @@ export default defineConfig({
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
+  /* Keep the suite running so CI records all failures found in the run. */
+  maxFailures: 0,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  reporter: process.env.CI
+    ? [
+        ['line'],
+        ['html', { open: 'never' }],
+        ['json', { outputFile: 'test-results/playwright-results.json' }],
+        ['junit', { outputFile: 'test-results/playwright-results.xml' }],
+      ]
+    : 'line',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    headless: false,
+    headless: !!process.env.CI,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on',
-    screenshot: 'on',
+    trace: process.env.CI ? 'on' : 'off',
+    screenshot: process.env.CI ? 'on' : 'only-on-failure',
 
   },
 
@@ -79,4 +88,3 @@ export default defineConfig({
   //   reuseExistingServer: !process.env.CI,
   // },
 });
-
